@@ -9,8 +9,9 @@ import threading
 import Adafruit_CharLCD as LCD
 
 lcd = LCD.Adafruit_CharLCDPlate()
-lcd.set_color(1,0,0)
 http = httplib.HTTPConnection("192.168.1.143",8080)
+
+screenOffline = True
 
 MODE_NONE = 0
 MODE_VIDEO = 1
@@ -86,9 +87,25 @@ def null_func():
 	lcd.clear()
 	lcd.message("NULL")
 
+def shutdownScreen():
+	global screenOffline 
+	screenOffline= True
+	lcd.clear()
+	lcd.enable_display(False)
+	lcd.set_backlight(False)
+
+def resetScreen():
+	global screenOffline
+	if screenOffline==True:
+		screenOffline = False
+		lcd.clear()
+		lcd.set_color(1,0,0)
+		lcd.enable_display(True)
+		lcd.set_backlight(True)
+
 buttons = {LCD.SELECT : playPause,
            LCD.LEFT   : goToPrev,
-           LCD.UP     : null_func,
+           LCD.UP     : shutdownScreen,
            LCD.DOWN   : null_func,
            LCD.RIGHT  : goToNext }
 
@@ -96,9 +113,13 @@ buttons = {LCD.SELECT : playPause,
 
 #############################################################
 def main():
+	global screenOffline
+	screenOffline=True
+	resetScreen()
 	while True:
 		for button in buttons.keys():
 			if lcd.is_pressed(button):
+				resetScreen()
 				buttons[button]()
 				while lcd.is_pressed(button):
 					pass
