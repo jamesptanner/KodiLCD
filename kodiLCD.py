@@ -17,6 +17,9 @@ MODE_NONE = 0
 MODE_VIDEO = 1
 MODE_AUDIO = 2
 
+CHAR_PAUSE = 0
+CHAR_PLAY = 1
+
 class NowPlayingThread(threading.Thread):
 	def __init__(self):
 		super(NowPlayingThread,self).__init__()
@@ -27,6 +30,38 @@ class NowPlayingThread(threading.Thread):
 			self.mode = mode
 	def run(self):
 		pass
+	def onPauseResume(self):
+		pass
+
+class DisplayThread(threading.Thread):
+	def __init__ (self):
+		super(DisplayThread,self).__inti__()
+		self.PriorityMessage= False
+	def run(self):
+		while True:
+			if not self.PriorityMessage:
+				lcd.clear()
+				strings = self.buildText()
+				lcd.home()
+				lcd.message(strings[0])
+				lcd.set_cursor(0,1)
+				lcd.message(strings[1])
+				time.sleep(.33)	
+			else
+				time.sleep(3.0)
+
+	def message(self,message):
+		self.PriorityMessage = True
+		lcd.clear()
+		lcd.message(message)
+		threading.Timer(3,self.__messageTimeout).start()
+
+	def __messageTimeout(self):
+		self.PriorityMessage = False
+
+	def buildText(self):
+		pass
+
 	
 def postKodiCommand(postCmd):
 	print postCmd
@@ -54,22 +89,20 @@ def goToNext():
 	# {"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 0, "to": "next" }, "id": 1}
 	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "position": 1 }, "id": 1}'
 	lcd.clear()
-	lcd.message("GOTO NEXT")
+	display_thread.message("GOTO NEXT")
 	player = getActivePlayer()
 	if player is not None:
 		print player
-#		postCmd.format(**player)
 		postKodiCommand(postCmd)
 
 def goToPrev():
 	# {"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 0, "to": "previous" }, "id": 1}
 	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "position": 0 }, "id": 1}'
 	lcd.clear()
-	lcd.message("GOTO PREV")
+	display_thread.message("GOTO PREV")
 	player = getActivePlayer()
 	if player is not None:
 		print player
-#		postCmd.format(**player)
 		postKodiCommand(postCmd)
 
 def playPause():
@@ -78,14 +111,14 @@ def playPause():
         player = getActivePlayer()
         if player is not None:
                 print player
-#                postCmd.format(**player)
                 postKodiCommand(postCmd)
+		playing_thread.onPauseResume()
 	lcd.clear()
-	lcd.message("PLAY/PAUSE")
+	display_thread.message("PLAY/PAUSE")
 
 def null_func():
 	lcd.clear()
-	lcd.message("NULL")
+	display_thread.message("NULL")
 
 def shutdownScreen():
 	global screenOffline 
@@ -99,9 +132,10 @@ def resetScreen():
 	if screenOffline==True:
 		screenOffline = False
 		lcd.clear()
-		lcd.set_color(1,0,0)
 		lcd.enable_display(True)
 		lcd.set_backlight(True)
+		lcd.set_color(1.0,0.0,0.0)
+		print 'resetting screen'
 
 buttons = {LCD.SELECT : playPause,
            LCD.LEFT   : goToPrev,
@@ -110,10 +144,17 @@ buttons = {LCD.SELECT : playPause,
            LCD.RIGHT  : goToNext }
 
 
-
+playing_thread = NowPlayingThread()
+display_thread = DisplayThread()
 #############################################################
 def main():
 	global screenOffline
+	global playing_thread
+	global display_thread
+	lcd.create_char(CHAR_PLAY,[0,8,12,14,12,8,0])
+	lcd.create_char(CHAR_PAUSE,[0,27,27,27,27,27,0])
+	playing_thread.start()
+	display_thread.start()
 	screenOffline=True
 	resetScreen()
 	while True:
