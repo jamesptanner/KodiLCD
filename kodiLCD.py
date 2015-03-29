@@ -2,15 +2,14 @@
 import httplib, urllib
 import json
 import time
+import datetime
 import math
 import threading
+import atexit
 
 import Adafruit_CharLCD as LCD
 
 lcd = LCD.Adafruit_CharLCDPlate()
-http = httplib.HTTPConnection("192.168.1.143",8080)
-
-screenOffline = True
 
 MODE_NONE = 0
 MODE_VIDEO = 1
@@ -19,6 +18,13 @@ MODE_AUDIO = 2
 CHAR_PAUSE = 1
 CHAR_PLAY = 2
 
+MODE_ELAPSED = 0
+MODE_REMAINING = 1
+
+screenOffline = True
+elapsedMode = MODE_ELAPSED
+
+
 class NowPlayingThread(threading.Thread):
 	def __init__(self):
 		super(NowPlayingThread,self).__init__()
@@ -26,8 +32,8 @@ class NowPlayingThread(threading.Thread):
 		self.checkMode()
 		self.title = ''
 		self.artist = ''
-		self.duration = ''
-		self.elapsed = ''
+		self.duration = {}
+		self.elapsed = {}
 
 	def checkMode(self):
 		player = getActivePlayer()
@@ -45,8 +51,30 @@ class NowPlayingThread(threading.Thread):
 			# {"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["percentage", "playlistid", "type", "time", "totaltime"], "playerid": 1 }, "id": 1}
 			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "duration"], "playerid": 0 }, "id": "AudioGetItem"}
 			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist", "season", "episode", "duration", "showtitle"], "playerid": 1 }, "id": "VideoGetItem"}
+			properties = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["type", "time", "totaltime"], "playerid": 1 }, "id": 1}')
 			
+			if 'result' not in properties:
+				continue
+			properties = properties['result'] 			
+
+			if len(properties) != 3:
+				continue
+			self.duration = properties["totaltime"]
+			self.elapsed = properties["time"]
+			
+			itemInfo = {}
+			if properties['type'] == 'audio':
+				itemInfo = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist"], "playerid": 0 }, "id": "AudioGetItem"}')['result']['item']
+			elif properties['type'] == 'video':
+				itemInfo = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist"], "playerid": 1 }, "id": "VideoGetItem"}')['result']['item']
+			else:
+				print 'Unknown mode'
+				continue
+			
+			self.title = itemInfo["title"]
+			self.artist = itemInfo["artist"][0]			
 			time.sleep(0.25)
+
 	def getArtist(self):
 		return self.artist
 
@@ -75,10 +103,10 @@ class DisplayThread(threading.Thread):
 					lcd.message(strings[0])
 					lcd.set_cursor(0,1)
 					lcd.message(strings[1])
-					time.sleep(.33)	
+					time.sleep(.1)	
 					self.tick += 1
 			else:
-				time.sleep(3.0)
+				time.sleep(0.25)
 
 	def message(self,message):
 		self.PriorityMessage = True
@@ -100,9 +128,9 @@ class DisplayThread(threading.Thread):
 		else:
 			playcode = '\x01'
 		titleSpace = 15 - len(title)
-		artistSpace = 16 - len(artist) - len(time) 
+		artistSpace = (16 - len(artist)) - len(time) 
 		hiRow = title + (" " * titleSpace) + playcode
-		loRow = artist + (" "* artistSpace) + time
+		loRow = str(artist) + (" " * artistSpace) + time
 		return [hiRow,loRow]
 
 	def getFormattedTitleString(self):
@@ -110,7 +138,29 @@ class DisplayThread(threading.Thread):
 		return self.getCycleSubstring(title,14)
 
 	def getFormattedTimeString(self):
-		return "11:22"
+		elapsedobj = playing_thread.getElapsed()
+		durationobj = playing_thread.getDuration()
+		
+		if len(elapsedobj) == 0:
+			return ''
+		elapsed = datetime.time(elapsedobj['hours'],elapsedobj['minutes'],elapsedobj['seconds'],elapsedobj['milliseconds'])
+
+		if elapsedMode != MODE_ELAPSED:
+			#remaining Mode has some maths needing doing to it.
+			if len(durationobj) == 0:
+				return ''
+			duration = datetime.time(durationobj['hours'],durationobj['minutes'],durationobj['seconds'],durationobj['milliseconds'])
+			remaining = duration - elapsed
+
+			if remaining.hour == 0:
+				return remaining.strftime("%M:%S")
+			return remaining.strftime("%H:%M:%S")	
+
+			return '22:11'
+		if elapsed.hour == 0:
+			return elapsed.strftime("%M:%S")
+
+		return elapsed.strftime("%H:%M:%S")
 
 	def getFormattedArtistString(self,time):
 		avaspace = (16 - len(time) - 1) 
@@ -131,17 +181,15 @@ class DisplayThread(threading.Thread):
 		cycleString = string + ' ' + string
 		strlen = len(string)
 		startchar = self.tick % (strlen + 1)
-		return cycleString[startchar:startchar+length]
+		return str(cycleString[startchar:startchar+length])
 
 	
 def postKodiCommand(postCmd):
-	print postCmd
+	http = httplib.HTTPConnection("192.168.1.143",8080)
 	postHeader = {'Content-Type':'application/json'}
 	http.request("POST", "/jsonrpc",postCmd,postHeader)
 	response = http.getresponse()
-	print response.status, response.reason
 	jsonResponse = response.read()
-	print jsonResponse
 	return json.loads(jsonResponse)
 
 def getActivePlayer():
@@ -163,7 +211,6 @@ def goToNext():
 	display_thread.message("GOTO NEXT")
 	player = getActivePlayer()
 	if player is not None:
-		print player
 		postKodiCommand(postCmd)
 
 def goToPrev():
@@ -173,7 +220,6 @@ def goToPrev():
 	display_thread.message("GOTO PREV")
 	player = getActivePlayer()
 	if player is not None:
-		print player
 		postKodiCommand(postCmd)
 
 def playPause():
@@ -181,9 +227,7 @@ def playPause():
 	postCmd = '{"jsonrpc": "2.0", "method": "Player.PlayPause", "params": { "playerid": 1 }, "id": 1}'
         player = getActivePlayer()
         if player is not None:
-                print player
                 postKodiCommand(postCmd)
-		playing_thread.onPauseResume()
 	lcd.clear()
 	display_thread.message("PLAY/PAUSE")
 
@@ -208,10 +252,22 @@ def resetScreen():
 		lcd.set_color(1.0,0.0,0.0)
 		print 'resetting screen'
 
+def elapsedToggle():
+	global elapseMode
+	if elapseMode == MODE_ELAPSED:
+		elapseMode = MODE_REMAINING
+	else:
+		elapseMode = MODE_ELAPSED
+
+def onExit():
+	playing_thread.stop()
+	display_thread.stop()
+	shutdownScreen()
+
 buttons = {LCD.SELECT : playPause,
            LCD.LEFT   : goToPrev,
            LCD.UP     : shutdownScreen,
-           LCD.DOWN   : null_func,
+           LCD.DOWN   : elapsedToggle,
            LCD.RIGHT  : goToNext }
 
 
@@ -219,15 +275,19 @@ playing_thread = NowPlayingThread()
 display_thread = DisplayThread()
 #############################################################
 def main():
+	atexit.register(onExit)
 	global screenOffline
 	global playing_thread
 	global display_thread
+	global elapseMode
+	elapseMode = MODE_ELAPSED
 	lcd.create_char(CHAR_PLAY,[0,8,12,14,12,8,0,0])
 	lcd.create_char(CHAR_PAUSE,[0,27,27,27,27,27,0,0])
 	playing_thread.start()
-	display_thread.start()
+	time.sleep(1.0)
 	screenOffline=True
 	resetScreen()
+	display_thread.start()
 	while True:
 		for button in buttons.keys():
 			if lcd.is_pressed(button):
@@ -238,3 +298,4 @@ def main():
 
 if __name__ == '__main__':
 	main()
+
