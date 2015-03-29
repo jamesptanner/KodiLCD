@@ -1,5 +1,6 @@
 # {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "duration"], "playerid": 0 }, "id": "AudioGetItem"}
 # {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "season", "episode", "duration", "showtitle"], "playerid": 1 }, "id": "VideoGetItem"}
+
 import httplib, urllib
 import json
 import time
@@ -17,8 +18,8 @@ MODE_NONE = 0
 MODE_VIDEO = 1
 MODE_AUDIO = 2
 
-CHAR_PAUSE = 0
-CHAR_PLAY = 1
+CHAR_PAUSE = 1
+CHAR_PLAY = 2
 
 class NowPlayingThread(threading.Thread):
 	def __init__(self):
@@ -35,19 +36,22 @@ class NowPlayingThread(threading.Thread):
 
 class DisplayThread(threading.Thread):
 	def __init__ (self):
-		super(DisplayThread,self).__inti__()
+		super(DisplayThread,self).__init__()
 		self.PriorityMessage= False
+		self.tick=0
+
 	def run(self):
 		while True:
 			if not self.PriorityMessage:
-				lcd.clear()
-				strings = self.buildText()
-				lcd.home()
-				lcd.message(strings[0])
-				lcd.set_cursor(0,1)
-				lcd.message(strings[1])
-				time.sleep(.33)	
-			else
+				if getActivePlayer() is not None:
+					strings = self.buildText()
+					lcd.home()
+					lcd.message(strings[0])
+					lcd.set_cursor(0,1)
+					lcd.message(strings[1])
+					time.sleep(.33)	
+					self.tick += 1
+			else:
 				time.sleep(3.0)
 
 	def message(self,message):
@@ -60,7 +64,47 @@ class DisplayThread(threading.Thread):
 		self.PriorityMessage = False
 
 	def buildText(self):
-		pass
+		title = self.getFormattedTitleString()
+		playing = self.isPlaying()
+		time = self.getFormattedTimeString()
+		artist = self.getFormattedArtistString(time)
+		playcode = ''
+		if playing:
+			playcode = '\x02'
+		else:
+			playcode = '\x01'
+		titleSpace = 15 - len(title)
+		artistSpace = 16 - len(artist) - len(time) 
+		hiRow = title + (" " * titleSpace) + playcode
+		loRow = artist + (" "* artistSpace) + time
+		return [hiRow,loRow]
+
+	def getFormattedTitleString(self):
+		title = 'superlongtitleblah'
+		return self.getCycleSubstring(title,14)
+
+	def getFormattedTimeString(self):
+		return '00:11:22'
+
+	def getFormattedArtistString(self,time):
+		avaspace = (16 - len(time) - 1) 
+		artist = 'artistartistartist'
+		if(len(artist) < avaspace):
+			return artist
+		
+		return self.getCycleSubstring(artist,avaspace)
+		
+	def isPlaying(self):
+		return False
+
+	def resetScroll(self):
+		self.tick = 0
+	
+	def getCycleSubstring(self,string,length):
+		cycleString = string + ' ' + string
+		strlen = len(string)
+		startchar = self.tick % (strlen + 1)
+		return cycleString[startchar:startchar+length]
 
 	
 def postKodiCommand(postCmd):
@@ -151,8 +195,8 @@ def main():
 	global screenOffline
 	global playing_thread
 	global display_thread
-	lcd.create_char(CHAR_PLAY,[0,8,12,14,12,8,0])
-	lcd.create_char(CHAR_PAUSE,[0,27,27,27,27,27,0])
+	lcd.create_char(CHAR_PLAY,[0,8,12,14,12,8,0,0])
+	lcd.create_char(CHAR_PAUSE,[0,27,27,27,27,27,0,0])
 	playing_thread.start()
 	display_thread.start()
 	screenOffline=True
