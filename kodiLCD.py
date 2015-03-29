@@ -1,5 +1,3 @@
-# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "duration"], "playerid": 0 }, "id": "AudioGetItem"}
-# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "season", "episode", "duration", "showtitle"], "playerid": 1 }, "id": "VideoGetItem"}
 
 import httplib, urllib
 import json
@@ -25,14 +23,42 @@ class NowPlayingThread(threading.Thread):
 	def __init__(self):
 		super(NowPlayingThread,self).__init__()
 		self.item={}
-		self.mode=MODE_NONE
-	def setMode(mode):
-		if MODE_NONE <= mode <= MODE_AUDIO:
-			self.mode = mode
+		self.checkMode()
+		self.title = ''
+		self.artist = ''
+		self.duration = ''
+		self.elapsed = ''
+
+	def checkMode(self):
+		player = getActivePlayer()
+		if player is None:
+			self.mode=MODE_NONE
+		elif player['type'] == 'video':
+			self.mode=MODE_VIDEO
+		elif player['type'] == 'audio':
+			self.mode=MODE_AUDIO
+		else:
+			self.mode=MODE_NONE
+
 	def run(self):
-		pass
-	def onPauseResume(self):
-		pass
+		while True:
+			# {"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["percentage", "playlistid", "type", "time", "totaltime"], "playerid": 1 }, "id": 1}
+			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "duration"], "playerid": 0 }, "id": "AudioGetItem"}
+			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist", "season", "episode", "duration", "showtitle"], "playerid": 1 }, "id": "VideoGetItem"}
+			
+			time.sleep(0.25)
+	def getArtist(self):
+		return self.artist
+
+	def getTitle(self):
+		return self.title
+
+	def getDuration(self):
+		return self.duration
+
+	def getElapsed(self):
+		return self.elapsed
+		
 
 class DisplayThread(threading.Thread):
 	def __init__ (self):
@@ -80,15 +106,15 @@ class DisplayThread(threading.Thread):
 		return [hiRow,loRow]
 
 	def getFormattedTitleString(self):
-		title = 'superlongtitleblah'
+		title = playing_thread.getTitle()
 		return self.getCycleSubstring(title,14)
 
 	def getFormattedTimeString(self):
-		return '00:11:22'
+		return "11:22"
 
 	def getFormattedArtistString(self,time):
 		avaspace = (16 - len(time) - 1) 
-		artist = 'artistartistartist'
+		artist = playing_thread.getArtist()
 		if(len(artist) < avaspace):
 			return artist
 		
@@ -100,6 +126,7 @@ class DisplayThread(threading.Thread):
 	def resetScroll(self):
 		self.tick = 0
 	
+
 	def getCycleSubstring(self,string,length):
 		cycleString = string + ' ' + string
 		strlen = len(string)
