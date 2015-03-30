@@ -22,7 +22,7 @@ MODE_ELAPSED = 0
 MODE_REMAINING = 1
 
 screenOffline = True
-elapsedMode = MODE_ELAPSED
+elapseMode = MODE_ELAPSED
 
 
 class NowPlayingThread(threading.Thread):
@@ -70,9 +70,11 @@ class NowPlayingThread(threading.Thread):
 			else:
 				print 'Unknown mode'
 				continue
-			
-			self.title = itemInfo["title"]
-			self.artist = itemInfo["artist"][0]			
+						
+			if itemInfo["title"] is not None:
+				self.title = itemInfo["title"]
+			if (len(itemInfo["artist"]) != 0) and (itemInfo["artist"][0] is not None):
+				self.artist = itemInfo["artist"][0]			
 			time.sleep(0.25)
 
 	def getArtist(self):
@@ -144,14 +146,17 @@ class DisplayThread(threading.Thread):
 		if len(elapsedobj) == 0:
 			return ''
 		elapsed = datetime.time(elapsedobj['hours'],elapsedobj['minutes'],elapsedobj['seconds'],elapsedobj['milliseconds'])
-
-		if elapsedMode != MODE_ELAPSED:
+		
+		global elapseMode
+		if elapseMode != MODE_ELAPSED:
 			#remaining Mode has some maths needing doing to it.
 			if len(durationobj) == 0:
 				return ''
 			duration = datetime.time(durationobj['hours'],durationobj['minutes'],durationobj['seconds'],durationobj['milliseconds'])
-			remaining = duration - elapsed
-
+			
+			duration = datetime.datetime.combine(datetime.date.today(),duration) 
+			elapsed =  datetime.datetime.combine(datetime.date.today(),elapsed)
+			remaining = (datetime.datetime.min + (duration - elapsed)).time()
 			if remaining.hour == 0:
 				return remaining.strftime("%M:%S")
 			return remaining.strftime("%H:%M:%S")	
@@ -178,7 +183,7 @@ class DisplayThread(threading.Thread):
 	
 
 	def getCycleSubstring(self,string,length):
-		cycleString = string + ' ' + string
+		cycleString = string + '  ' + string
 		strlen = len(string)
 		startchar = self.tick % (strlen + 1)
 		return str(cycleString[startchar:startchar+length])
@@ -206,7 +211,7 @@ def getActivePlayer():
 
 def goToNext():
 	# {"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 0, "to": "next" }, "id": 1}
-	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "position": 1 }, "id": 1}'
+	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "to": "next" }, "id": 1}'
 	lcd.clear()
 	display_thread.message("GOTO NEXT")
 	player = getActivePlayer()
@@ -215,7 +220,7 @@ def goToNext():
 
 def goToPrev():
 	# {"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 0, "to": "previous" }, "id": 1}
-	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "position": 0 }, "id": 1}'
+	postCmd = '{"jsonrpc": "2.0", "method": "Player.GoTo", "params": { "playerid": 1, "to": "previous" }, "id": 1}'
 	lcd.clear()
 	display_thread.message("GOTO PREV")
 	player = getActivePlayer()
@@ -236,18 +241,12 @@ def null_func():
 	display_thread.message("NULL")
 
 def shutdownScreen():
-	global screenOffline 
-	screenOffline= True
+
 	lcd.clear()
-	lcd.enable_display(False)
 	lcd.set_backlight(False)
 
 def resetScreen():
-	global screenOffline
-	if screenOffline==True:
-		screenOffline = False
 		lcd.clear()
-		lcd.enable_display(True)
 		lcd.set_backlight(True)
 		lcd.set_color(1.0,0.0,0.0)
 		print 'resetting screen'
@@ -276,7 +275,6 @@ display_thread = DisplayThread()
 #############################################################
 def main():
 	atexit.register(onExit)
-	global screenOffline
 	global playing_thread
 	global display_thread
 	global elapseMode
@@ -285,7 +283,6 @@ def main():
 	lcd.create_char(CHAR_PAUSE,[0,27,27,27,27,27,0,0])
 	playing_thread.start()
 	time.sleep(1.0)
-	screenOffline=True
 	resetScreen()
 	display_thread.start()
 	while True:
