@@ -34,6 +34,7 @@ class NowPlayingThread(threading.Thread):
 		self.artist = ''
 		self.duration = {}
 		self.elapsed = {}
+		self.playing = False
 
 	def checkMode(self):
 		player = getActivePlayer()
@@ -51,17 +52,17 @@ class NowPlayingThread(threading.Thread):
 			# {"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["percentage", "playlistid", "type", "time", "totaltime"], "playerid": 1 }, "id": 1}
 			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "album", "artist", "duration"], "playerid": 0 }, "id": "AudioGetItem"}
 			# {"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist", "season", "episode", "duration", "showtitle"], "playerid": 1 }, "id": "VideoGetItem"}
-			properties = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["type", "time", "totaltime"], "playerid": 1 }, "id": 1}')
+			properties = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetProperties", "params": {"properties": ["type", "time", "totaltime", "speed"], "playerid": 1 }, "id": 1}')
 			
 			if 'result' not in properties:
 				continue
 			properties = properties['result'] 			
 
-			if len(properties) != 3:
+			if len(properties) != 4:
 				continue
 			self.duration = properties["totaltime"]
 			self.elapsed = properties["time"]
-			
+			self.playing = properties["playing"] == 1
 			itemInfo = {}
 			if properties['type'] == 'audio':
 				itemInfo = postKodiCommand('{"jsonrpc": "2.0", "method": "Player.GetItem", "params": { "properties": ["title", "artist"], "playerid": 0 }, "id": "AudioGetItem"}')['result']['item']
@@ -88,6 +89,8 @@ class NowPlayingThread(threading.Thread):
 
 	def getElapsed(self):
 		return self.elapsed
+	def getPlaying(self):
+		return self.playing
 		
 
 class DisplayThread(threading.Thread):
@@ -125,7 +128,7 @@ class DisplayThread(threading.Thread):
 		time = self.getFormattedTimeString()
 		artist = self.getFormattedArtistString(time)
 		playcode = ''
-		if playing:
+		if playing_thread.getPlaying():
 			playcode = '\x02'
 		else:
 			playcode = '\x01'
@@ -175,8 +178,6 @@ class DisplayThread(threading.Thread):
 		
 		return self.getCycleSubstring(artist,avaspace)
 		
-	def isPlaying(self):
-		return False
 
 	def resetScroll(self):
 		self.tick = 0
